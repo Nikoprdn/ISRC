@@ -1,0 +1,1239 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Reconnaissance des titres d'un mix de DJ et extraction des codes ISRC.">
+<title>Mix ISRC</title>
+<style>
+:root {
+  --bg: #f6f5f2; --surface: #ffffff; --surface-2: #f0eee9; --text: #1c1b19; --muted: #6b6862;
+  --border: #e2dfd8; --accent: #2f5bea; --accent-text: #ffffff; --accent-soft: #e8eeff;
+  --warn: #92400e; --warn-bg: #fef3c7; --ok: #15803d; --ok-bg: #dcfce7; --err: #b91c1c; --err-bg: #fee2e2;
+  --radius: 10px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121212; --surface: #1c1c1e; --surface-2: #26262a; --text: #ecebe8; --muted: #a19e97;
+    --border: #34332f; --accent: #7c9bff; --accent-text: #0b0b0b; --accent-soft: #1e2748;
+    --warn: #fbbf24; --warn-bg: #3a2a05; --ok: #4ade80; --ok-bg: #0f2e1a; --err: #f87171; --err-bg: #3b1212;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121212; --surface: #1c1c1e; --surface-2: #26262a; --text: #ecebe8; --muted: #a19e97;
+  --border: #34332f; --accent: #7c9bff; --accent-text: #0b0b0b; --accent-soft: #1e2748;
+  --warn: #fbbf24; --warn-bg: #3a2a05; --ok: #4ade80; --ok-bg: #0f2e1a; --err: #f87171; --err-bg: #3b1212;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header, main { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+header { padding-top: 28px; padding-bottom: 8px; }
+h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; }
+header p { margin: 4px 0 0; color: var(--muted); }
+h2 { font-size: 17px; margin: 0 0 12px; }
+h3 { font-size: 16px; margin: 0; word-break: break-word; }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px; margin: 16px 0;
+}
+.hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 0; min-width: 0; }
+legend { padding: 0 6px; font-weight: 600; }
+label { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; }
+label.inline { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 14px; margin-top: 6px; }
+input[type=text], input[type=password], input[type=number], input[type=url], select {
+  width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 14px;
+}
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button {
+  font: inherit; font-size: 14px; border-radius: 6px; padding: 7px 14px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+}
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.spacer { flex: 1; }
+details { margin-top: 12px; }
+summary { cursor: pointer; font-size: 14px; }
+pre {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px;
+  overflow-x: auto; font: 12px/1.45 var(--mono); max-height: 360px;
+}
+#drop {
+  border: 2px dashed var(--border); border-radius: var(--radius); padding: 26px 16px; text-align: center;
+  color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s;
+}
+#drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.table-wrap { overflow-x: auto; margin-top: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); font-weight: 600; white-space: nowrap; }
+td.num, td.time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.title { min-width: 180px; }
+td .sub { color: var(--muted); font-size: 13px; }
+input.isrc { font-family: var(--mono); font-size: 13px; width: 160px; padding: 4px 6px; }
+input.isrc.invalid { border-color: var(--err); background: var(--err-bg); }
+.tag { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); margin: 1px 2px 1px 0; white-space: nowrap; }
+.tag.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.tag.ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.tag.err { background: var(--err-bg); color: var(--err); border-color: transparent; }
+button.small { padding: 2px 8px; font-size: 12px; }
+.mix { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+.mix:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
+.stats { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+.progress { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-top: 4px; min-width: 80px; }
+.progress > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+.notice { border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; font-size: 14px; }
+.notice.err { background: var(--err-bg); color: var(--err); }
+.notice.warn { background: var(--warn-bg); color: var(--warn); }
+#log { max-height: 220px; overflow-y: auto; white-space: pre-wrap; margin: 0; }
+.muted { color: var(--muted); }
+.hidden { display: none !important; }
+footer { max-width: 1100px; margin: 0 auto; padding: 8px 16px 40px; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) {
+  .card { padding: 14px; }
+  h1 { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mix ISRC</h1>
+  <p>Reconnaissance des titres d'un mix de DJ et récupération des codes ISRC.</p>
+</header>
+
+<main>
+  <!-- 1. SERVICES -->
+  <section class="card" id="services">
+    <h2>1. Services de reconnaissance</h2>
+    <p class="hint">Vos clés restent dans ce navigateur : elles ne sont jamais écrites dans cette page et ne sont envoyées qu'aux services concernés (ou à votre relais, s'il est configuré).</p>
+    <div class="grid">
+      <fieldset>
+        <legend><label class="inline" style="margin:0"><input type="checkbox" id="acrOn" checked> ACRCloud</label></legend>
+        <label for="acrHost">Hôte du projet</label>
+        <input type="text" id="acrHost" value="identify-eu-west-1.acrcloud.com" autocomplete="off" spellcheck="false">
+        <label for="acrKey">Access Key</label>
+        <input type="text" id="acrKey" autocomplete="off" spellcheck="false">
+        <label for="acrSecret">Access Secret</label>
+        <input type="password" id="acrSecret" autocomplete="off">
+      </fieldset>
+      <fieldset>
+        <legend><label class="inline" style="margin:0"><input type="checkbox" id="auddOn"> AudD</label></legend>
+        <label for="auddToken">Jeton API</label>
+        <input type="password" id="auddToken" autocomplete="off">
+        <p class="hint" style="margin-top:8px">Pas de score de confiance : un résultat AudD compte pour 80/100. Les ISRC dépendent de votre forfait AudD.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Combinaison</legend>
+        <label for="order">Ordre d'interrogation</label>
+        <select id="order">
+          <option value="acrcloud,audd">ACRCloud, puis AudD</option>
+          <option value="audd,acrcloud">AudD, puis ACRCloud</option>
+        </select>
+        <label class="inline"><input type="radio" name="strategy" value="cascade" checked> Cascade (économique)</label>
+        <label class="inline"><input type="radio" name="strategy" value="parallel"> Parallèle (résultats recoupés)</label>
+        <label class="inline" style="margin-top:12px"><input type="checkbox" id="mbOn" checked> Compléter les ISRC manquants via MusicBrainz (gratuit)</label>
+      </fieldset>
+    </div>
+
+    <details>
+      <summary>Explications : cascade, parallèle, MusicBrainz</summary>
+      <p class="hint" style="margin-top:8px">
+        <strong>Cascade</strong> : chaque extrait est d'abord envoyé au premier service ; le second n'est appelé que si le premier ne trouve rien de sûr (score &lt; 80). Le moins cher.<br>
+        <strong>Parallèle</strong> : chaque extrait est envoyé aux deux services et leurs réponses sont recoupées par vote. Plus fiable, mais deux fois plus de requêtes.<br>
+        <strong>MusicBrainz</strong> retrouve l'ISRC d'un titre reconnu sans ISRC, à partir de l'artiste et du titre. Il peut s'agir d'une autre version du morceau : ces lignes restent « à vérifier ».<br>
+        Si un service tombe en erreur définitive (clé invalide, quota épuisé), il est désactivé et l'autre continue.
+      </p>
+    </details>
+
+    <details id="proxyBox">
+      <summary>Relais (si les services refusent les appels depuis le navigateur)</summary>
+      <p class="hint" style="margin-top:8px">Certains services bloquent les appels directs depuis une page web (règle « CORS »). Dans ce cas, déployez gratuitement le relais ci-dessous sur Cloudflare Workers (dash.cloudflare.com → Workers → Créer → collez le code → Déployer), puis indiquez son adresse ici. Il ne relaie que vers ACRCloud et AudD et ne conserve rien.</p>
+      <label for="proxy">Adresse du relais (facultatif)</label>
+      <input type="url" id="proxy" placeholder="https://mix-isrc-relais.votre-compte.workers.dev" spellcheck="false">
+      <div class="row" style="margin-top:10px"><button type="button" id="copyWorker">Copier le code du relais</button><span id="copyMsg" class="muted"></span></div>
+      <pre id="workerCode"></pre>
+    </details>
+
+    <div class="row" style="margin-top:14px">
+      <label class="inline" style="margin:0"><input type="checkbox" id="remember"> Mémoriser les clés dans ce navigateur</label>
+      <span class="spacer"></span>
+      <button type="button" id="forget">Effacer les clés enregistrées</button>
+    </div>
+  </section>
+
+  <!-- 2. MIXS -->
+  <section class="card">
+    <h2>2. Mixs à analyser</h2>
+    <div id="drop" tabindex="0" role="button" aria-label="Choisir des fichiers audio">
+      <strong>Déposez vos mixs ici</strong> ou cliquez pour les choisir<br>
+      <span style="font-size:13px">MP3 ou WAV recommandés : un mix d'une heure s'ouvre en moins d'une seconde. FLAC, M4A, OGG : environ 20 s par heure de mix et beaucoup de mémoire (à éviter sur un ordinateur modeste).</span>
+    </div>
+    <input type="file" id="fileInput" accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.aif,.aiff" multiple class="hidden">
+
+    <div class="table-wrap">
+      <table id="fileTable" class="hidden">
+        <thead><tr><th>Mix</th><th>Durée</th><th>Format</th><th>Extraits</th><th>État</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="estimate" class="stats"></p>
+
+    <details>
+      <summary>Réglages avancés</summary>
+      <div class="grid" style="margin-top:8px">
+        <div><label for="win">Durée d'un extrait (s)</label><input type="number" id="win" value="12" min="5" max="20" step="1"></div>
+        <div><label for="step">Pas entre deux extraits (s)</label><input type="number" id="step" value="20" min="5" max="120" step="1"></div>
+        <div><label for="minScore">Score minimal (0-100)</label><input type="number" id="minScore" value="70" min="0" max="100"></div>
+        <div><label for="minHits">Détections minimales par titre</label><input type="number" id="minHits" value="2" min="1" max="10"></div>
+        <div><label for="maxGap">Extraits manquants tolérés dans un titre</label><input type="number" id="maxGap" value="1" min="0" max="5"></div>
+        <div><label for="workers">Requêtes simultanées</label><input type="number" id="workers" value="2" min="1" max="8"></div>
+      </div>
+      <p class="hint" style="margin-top:10px">Un pas plus petit donne des heures de début plus précises mais coûte plus de requêtes. Les résultats déjà obtenus sont gardés en mémoire du navigateur : relancer une analyse interrompue ne repaie pas les extraits déjà identifiés.</p>
+      <div class="row"><button type="button" id="clearCache">Vider le cache des analyses</button><span id="cacheInfo" class="muted" style="font-size:13px"></span></div>
+    </details>
+
+    <div class="row" style="margin-top:16px">
+      <button type="button" class="primary" id="run" disabled>Analyser</button>
+      <button type="button" id="stop" disabled>Arrêter</button>
+      <span id="runMsg" class="muted" style="font-size:14px"></span>
+    </div>
+    <div id="notices"></div>
+  </section>
+
+  <!-- 3. RÉSULTATS -->
+  <section class="card hidden" id="resultsCard">
+    <div class="row">
+      <h2 style="margin:0">3. Résultats</h2>
+      <span class="spacer"></span>
+      <button type="button" id="exportRecap">Récapitulatif CSV (tous les mixs)</button>
+    </div>
+    <p class="hint" style="margin-top:8px">Corrigez un ISRC directement dans le tableau et cliquez sur « Valider » une fois une ligne vérifiée : les exports reprennent vos corrections. Pensez à exporter avant de fermer la page.</p>
+    <div id="results"></div>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Journal</summary>
+      <pre id="log"></pre>
+    </details>
+  </section>
+</main>
+<footer>
+  Les titres inédits, bootlegs, mashups et morceaux très modifiés (pitch, tempo) peuvent ne pas être reconnus. Un remix a son propre ISRC. Relisez les lignes « à vérifier » et les zones non identifiées avant toute déclaration.
+</footer>
+
+<script>
+'use strict';
+(() => {
+/* =========================================================================
+ * Utilitaires
+ * ========================================================================= */
+const $ = (s) => document.querySelector(s);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+class TempError extends Error {}   // erreur passagère : l'extrait sera retenté à la prochaine analyse
+class FatalError extends Error {}  // erreur définitive pour un service (clé, quota, CORS)
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') node.className = v;
+    else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
+    else if (k in node && k !== 'list') node[k] = v;
+    else node.setAttribute(k, v);
+  }
+  for (const c of children.flat()) if (c != null && c !== false) node.append(c.nodeType ? c : String(c));
+  return node;
+}
+
+function fmtTime(seconds) {
+  const s = Math.round(seconds);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(Math.floor(s / 3600))}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}`;
+}
+function fmtDuration(seconds) {
+  const m = Math.round(seconds / 60);
+  return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`;
+}
+const nf = new Intl.NumberFormat('fr-FR');
+
+const store = {
+  get(key, fallback = null) {
+    try { const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); } catch { return fallback; }
+  },
+  set(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
+  },
+  remove(key) { try { localStorage.removeItem(key); } catch { /* ignore */ } },
+  keys(prefix) {
+    const out = [];
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith(prefix)) out.push(k); } } catch { /* ignore */ }
+    return out;
+  },
+};
+
+const logEl = () => $('#log');
+function log(msg) {
+  const line = `[${new Date().toLocaleTimeString('fr-FR')}] ${msg}\n`;
+  const node = logEl();
+  if (node) { node.textContent += line; node.scrollTop = node.scrollHeight; }
+}
+
+/* =========================================================================
+ * ISRC
+ * ========================================================================= */
+const ISRC_RE = /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/;
+const normIsrc = (c) => String(c ?? '').replace(/[\s-]/g, '').toUpperCase();
+const isValidIsrc = (c) => ISRC_RE.test(normIsrc(c));
+function fmtIsrc(code) {
+  const n = normIsrc(code);
+  return isValidIsrc(n) ? `${n.slice(0, 2)}-${n.slice(2, 5)}-${n.slice(5, 7)}-${n.slice(7)}` : n;
+}
+function extractIsrcs(value) {
+  if (value == null) return [];
+  const items = Array.isArray(value) ? value : [value];
+  const out = [];
+  for (const it of items) { const n = normIsrc(it); if (isValidIsrc(n) && !out.includes(n)) out.push(n); }
+  return out;
+}
+
+/* =========================================================================
+ * Identité d'un titre (commune à tous les services)
+ * ========================================================================= */
+const normText = (t) => String(t ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/[^a-z0-9]+/g, ' ').trim();
+function looseTitle(title) {
+  let t = String(title ?? '').replace(/[([].*?[)\]]/g, ' ');
+  t = t.split(' - ')[0];
+  return normText(t);
+}
+function mainArtist(artists) {
+  const first = String(artists ?? '').split(/,|&|\bfeat\.?|\bft\.?|\bfeaturing\b|\bx\b|;| and /i)[0];
+  return normText(first) || normText(artists);
+}
+const looseKey = (artists, title) => `${mainArtist(artists)}|${looseTitle(title)}`;
+const matchKey = (m) => m.acrid || looseKey(m.artists, m.title);
+
+/* =========================================================================
+ * Lecture audio : on découpe le fichier sans le décoder (MP3, WAV)
+ * ========================================================================= */
+const BITRATES = {
+  V1L1: [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448],
+  V1L2: [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384],
+  V1L3: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],
+  V2L1: [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256],
+  V2L2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
+};
+const SAMPLE_RATES = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+
+function parseMp3Header(b, p) {
+  if (p + 4 > b.length || b[p] !== 0xff || (b[p + 1] & 0xe0) !== 0xe0) return null;
+  const ver = (b[p + 1] >> 3) & 3, layerBits = (b[p + 1] >> 1) & 3;
+  if (ver === 1 || layerBits === 0) return null;
+  const bri = (b[p + 2] >> 4) & 15, sri = (b[p + 2] >> 2) & 3, pad = (b[p + 2] >> 1) & 1;
+  if (bri === 0 || bri === 15 || sri === 3) return null;
+  const layer = 4 - layerBits, v1 = ver === 3;
+  const table = v1 ? BITRATES['V1L' + layer] : BITRATES[layer === 1 ? 'V2L1' : 'V2L2'];
+  const br = table[bri] * 1000, sr = SAMPLE_RATES[ver][sri];
+  let len, samples;
+  if (layer === 1) { len = (Math.floor((12 * br) / sr) + pad) * 4; samples = 384; }
+  else if (layer === 2) { len = Math.floor((144 * br) / sr) + pad; samples = 1152; }
+  else { len = Math.floor(((v1 ? 144 : 72) * br) / sr) + pad; samples = v1 ? 1152 : 576; }
+  return len < 24 ? null : { len, samples, sr };
+}
+
+async function openMp3(file) {
+  const b = new Uint8Array(await file.arrayBuffer());
+  let pos = 0;
+  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) { // en-tête ID3v2
+    const size = ((b[6] & 0x7f) << 21) | ((b[7] & 0x7f) << 14) | ((b[8] & 0x7f) << 7) | (b[9] & 0x7f);
+    pos = 10 + size + ((b[5] & 0x10) ? 10 : 0);
+  }
+  const offsets = [], times = [];
+  let t = 0, locked = false;
+  while (pos + 4 <= b.length) {
+    const h = parseMp3Header(b, pos);
+    if (!h) { pos++; locked = false; continue; }
+    const next = pos + h.len;
+    // hors synchronisation, on exige que la trame suivante soit valide (évite les faux en-têtes)
+    if (!locked && next + 4 <= b.length && !parseMp3Header(b, next)) { pos++; continue; }
+    locked = true;
+    offsets.push(pos); times.push(t);
+    t += h.samples / h.sr;
+    pos = next;
+  }
+  if (offsets.length < 20) return null;
+  const off = Float64Array.from(offsets), tim = Float64Array.from(times);
+  const frameAt = (sec) => { // première trame qui commence à sec ou après
+    let lo = 0, hi = tim.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (tim[mid] < sec) lo = mid + 1; else hi = mid; }
+    return lo;
+  };
+  return {
+    kind: 'MP3', duration: t,
+    async window(start, len) {
+      const i = Math.min(frameAt(start), off.length - 1);
+      const j = frameAt(start + len);
+      const end = j < off.length ? off[j] : file.size;
+      return file.slice(off[i], end, 'audio/mpeg');
+    },
+  };
+}
+
+function makeWav(int16, rate) {
+  const buf = new ArrayBuffer(44 + int16.length * 2), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + int16.length * 2, true); w(8, 'WAVE');
+  w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, int16.length * 2, true);
+  new Int16Array(buf, 44).set(int16);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+function pcmToMonoInt16(ab, fmt) {
+  const v = new DataView(ab), bps = fmt.bits / 8, frames = Math.floor(ab.byteLength / fmt.blockAlign);
+  const out = new Int16Array(frames);
+  const read = (o) => {
+    if (fmt.format === 3) return bps === 4 ? v.getFloat32(o, true) : v.getFloat64(o, true);
+    switch (bps) {
+      case 1: return (v.getUint8(o) - 128) / 128;
+      case 2: return v.getInt16(o, true) / 32768;
+      case 3: { let x = v.getUint8(o) | (v.getUint8(o + 1) << 8) | (v.getUint8(o + 2) << 16); if (x & 0x800000) x -= 0x1000000; return x / 8388608; }
+      default: return v.getInt32(o, true) / 2147483648;
+    }
+  };
+  for (let f = 0; f < frames; f++) {
+    let s = 0;
+    for (let c = 0; c < fmt.ch; c++) s += read(f * fmt.blockAlign + c * bps);
+    s = Math.max(-1, Math.min(1, s / fmt.ch));
+    out[f] = Math.round(s * 32767);
+  }
+  return out;
+}
+
+async function openWav(file) {
+  const head = new DataView(await file.slice(0, Math.min(file.size, 1 << 20)).arrayBuffer());
+  if (head.byteLength < 44) return null;
+  const tag = (o) => String.fromCharCode(head.getUint8(o), head.getUint8(o + 1), head.getUint8(o + 2), head.getUint8(o + 3));
+  if (tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return null;
+  let p = 12, fmt = null, dataOff = -1, dataSize = 0;
+  while (p + 8 <= head.byteLength) {
+    const id = tag(p), size = head.getUint32(p + 4, true);
+    if (id === 'fmt ') {
+      let format = head.getUint16(p + 8, true);
+      if (format === 0xfffe && size >= 26) format = head.getUint16(p + 32, true);
+      fmt = { format, ch: head.getUint16(p + 10, true), rate: head.getUint32(p + 12, true),
+              blockAlign: head.getUint16(p + 20, true), bits: head.getUint16(p + 22, true) };
+    } else if (id === 'data') { dataOff = p + 8; dataSize = size; break; }
+    p += 8 + size + (size & 1);
+  }
+  if (!fmt || dataOff < 0 || !fmt.blockAlign || !fmt.rate) return null;
+  const ok = (fmt.format === 1 && [8, 16, 24, 32].includes(fmt.bits)) || (fmt.format === 3 && [32, 64].includes(fmt.bits));
+  if (!ok) return null;
+  dataSize = Math.min(dataSize, file.size - dataOff);
+  const frames = Math.floor(dataSize / fmt.blockAlign);
+  return {
+    kind: 'WAV', duration: frames / fmt.rate,
+    async window(start, len) {
+      const f0 = Math.min(frames, Math.floor(start * fmt.rate));
+      const f1 = Math.min(frames, f0 + Math.floor(len * fmt.rate));
+      const ab = await file.slice(dataOff + f0 * fmt.blockAlign, dataOff + f1 * fmt.blockAlign).arrayBuffer();
+      return makeWav(pcmToMonoInt16(ab, fmt), fmt.rate);
+    },
+  };
+}
+
+async function decodeMono(file) {
+  const ctx = new OfflineAudioContext(1, 1, 16000);
+  const audio = await ctx.decodeAudioData(await file.arrayBuffer());
+  const n = audio.length, mono = new Float32Array(n);
+  for (let c = 0; c < audio.numberOfChannels; c++) {
+    const d = audio.getChannelData(c);
+    for (let i = 0; i < n; i++) mono[i] += d[i] / audio.numberOfChannels;
+  }
+  return { mono, rate: audio.sampleRate };
+}
+
+// FLAC, M4A, OGG... : décodage complet. Pour ne pas saturer la mémoire avec plusieurs mixs d'une heure,
+// l'audio décodé n'est gardé que pendant l'analyse du mix concerné.
+async function openDecoded(file) {
+  let data = await decodeMono(file);
+  const duration = data.mono.length / data.rate;
+  data = null;
+  return {
+    kind: 'décodé', duration,
+    async prepare() { if (!data) data = await decodeMono(file); },
+    release() { data = null; },
+    async window(start, len) {
+      if (!data) data = await decodeMono(file);
+      const { mono, rate } = data, n = mono.length;
+      const a = Math.min(n, Math.floor(start * rate)), z = Math.min(n, a + Math.floor(len * rate));
+      const out = new Int16Array(z - a);
+      for (let i = a; i < z; i++) out[i - a] = Math.round(Math.max(-1, Math.min(1, mono[i])) * 32767);
+      return makeWav(out, rate);
+    },
+  };
+}
+
+async function openSource(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  let src = null;
+  if (ext === 'mp3' || file.type === 'audio/mpeg') src = await openMp3(file);
+  else if (ext === 'wav' || ext === 'wave' || file.type.includes('wav')) src = await openWav(file);
+  if (!src) src = await openDecoded(file);
+  return src;
+}
+
+function windowOffsets(duration, win, step) {
+  if (!(duration > 0)) return [];
+  if (duration <= win) return [0];
+  const out = [];
+  for (let t = 0; t + win <= duration; t += step) out.push(Math.round(t * 1000) / 1000);
+  const last = Math.round((duration - win) * 1000) / 1000;
+  if (!out.length || out[out.length - 1] + win < duration - 1) out.push(last);
+  return out;
+}
+
+/* =========================================================================
+ * Réseau
+ * ========================================================================= */
+let proxyUrl = '';
+function viaProxy(url) {
+  if (!proxyUrl) return url;
+  return proxyUrl + (proxyUrl.includes('?') ? '&' : '?') + 'target=' + encodeURIComponent(url);
+}
+const corsMessage = (label) =>
+  `${label} est injoignable depuis le navigateur (appel probablement bloqué par la règle CORS du service, ou pas de connexion). ` +
+  `Déployez le relais décrit dans « Relais » (section 1) et indiquez son adresse, puis relancez : les résultats déjà obtenus sont conservés.`;
+
+async function postWithRetries(provider, url, buildForm, retries = 3) {
+  let last = 'erreur inconnue', onlyNetwork = true;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt) await sleep(1500 * 2 ** (attempt - 1));
+    let resp;
+    try { resp = await fetch(viaProxy(url), { method: 'POST', body: await buildForm() }); }
+    catch { last = 'réseau / CORS'; continue; }
+    onlyNetwork = false;
+    if (resp.status >= 500 || resp.status === 429) { last = `HTTP ${resp.status}`; continue; }
+    if (resp.status === 403 && proxyUrl) { last = 'relais : hôte refusé'; break; }
+    try { const json = await resp.json(); provider.reachable = true; return json; }
+    catch { last = `réponse illisible (HTTP ${resp.status})`; }
+  }
+  if (onlyNetwork && !provider.reachable) throw new FatalError(corsMessage(provider.label));
+  throw new TempError(`${provider.label} : ${last}`);
+}
+
+/* =========================================================================
+ * Services de reconnaissance
+ * ========================================================================= */
+async function acrSignature(secret, key, dataType, timestamp) {
+  const enc = new TextEncoder();
+  const text = ['POST', '/v1/identify', key, dataType, '1', timestamp].join('\n');
+  const k = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(text)));
+  let bin = ''; for (const x of sig) bin += String.fromCharCode(x);
+  return btoa(bin);
+}
+
+function parseAcr(payload) {
+  const music = payload?.metadata?.music || [];
+  if (!music.length) return null;
+  const best = music.reduce((a, b) => ((b.score || 0) > (a.score || 0) ? b : a));
+  return {
+    acrid: best.acrid || '', title: best.title || '',
+    artists: (best.artists || []).map((a) => a.name).filter(Boolean).join(', '),
+    album: best.album?.name || '', label: best.label || '', release_date: best.release_date || '',
+    isrcs: extractIsrcs(best.external_ids?.isrc), score: Number(best.score || 0),
+    sources: ['acrcloud'], mbid: '',
+  };
+}
+
+class AcrCloud {
+  constructor({ host, key, secret }) {
+    this.name = 'acrcloud'; this.label = 'ACRCloud'; this.calls = 0; this.reachable = false;
+    this.key = key; this.secret = secret;
+    this.url = `https://${host.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/v1/identify`;
+  }
+  async identify(blob) {
+    this.calls++;
+    const payload = await postWithRetries(this, this.url, async () => {
+      const ts = String(Math.floor(Date.now() / 1000));
+      const f = new FormData();
+      f.append('access_key', this.key);
+      f.append('sample_bytes', String(blob.size));
+      f.append('timestamp', ts);
+      f.append('signature', await acrSignature(this.secret, this.key, 'audio', ts));
+      f.append('data_type', 'audio');
+      f.append('signature_version', '1');
+      f.append('sample', blob, blob.type === 'audio/mpeg' ? 'sample.mp3' : 'sample.wav');
+      return f;
+    });
+    const code = payload?.status?.code, msg = payload?.status?.msg;
+    if (code === 0) return parseAcr(payload);
+    if ([1001, 2000, 2004].includes(code)) return null;
+    if ([3001, 3002, 3003, 3014].includes(code)) throw new FatalError(`ACRCloud, code ${code} : ${msg}`);
+    throw new TempError(`ACRCloud, code ${code} : ${msg}`);
+  }
+}
+
+const AUDD_SCORE = 80;
+function parseAudd(result) {
+  if (!result) return null;
+  const isrcs = [];
+  for (const c of [result.apple_music?.isrc, result.spotify?.external_ids?.isrc, result.deezer?.isrc]) {
+    for (const i of extractIsrcs(c)) if (!isrcs.includes(i)) isrcs.push(i);
+  }
+  return {
+    acrid: '', title: result.title || '', artists: result.artist || '', album: result.album || '',
+    label: result.label || '', release_date: result.release_date || '', isrcs, score: AUDD_SCORE,
+    sources: ['audd'], mbid: '',
+  };
+}
+
+class Audd {
+  constructor(token) { this.name = 'audd'; this.label = 'AudD'; this.calls = 0; this.reachable = false; this.token = token; }
+  async identify(blob) {
+    this.calls++;
+    const payload = await postWithRetries(this, 'https://api.audd.io/', async () => {
+      const f = new FormData();
+      f.append('api_token', this.token);
+      f.append('return', 'apple_music,spotify,deezer');
+      f.append('file', blob, blob.type === 'audio/mpeg' ? 'sample.mp3' : 'sample.wav');
+      return f;
+    });
+    if (payload?.status === 'success') return parseAudd(payload.result);
+    const code = payload?.error?.error_code, msg = String(payload?.error?.error_message || '');
+    if (code === 900 || code === 901 || /limit/i.test(msg)) throw new FatalError(`AudD, erreur ${code} : ${msg}`);
+    if ([300, 400, 500, 700].includes(code)) return null;
+    throw new TempError(`AudD, erreur ${code} : ${msg}`);
+  }
+}
+
+function mergeMatches(matches, bonus = 5) {
+  if (!matches.length) return null;
+  const groups = new Map();
+  for (const m of matches) {
+    const k = looseKey(m.artists, m.title);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(m);
+  }
+  const sum = (g) => g.reduce((a, m) => a + m.score, 0);
+  let win = null;
+  for (const g of groups.values()) if (!win || g.length > win.length || (g.length === win.length && sum(g) > sum(win))) win = g;
+  const members = [...win].sort((a, b) => b.score - a.score), lead = members[0];
+  const first = (k) => members.find((m) => m[k])?.[k] || lead[k];
+  const votes = new Map();
+  for (const m of members) for (const i of m.isrcs) votes.set(i, (votes.get(i) || 0) + 1);
+  const isrcs = [...votes.keys()].sort((a, b) => votes.get(b) - votes.get(a));
+  return {
+    ...lead, acrid: '', album: first('album'), label: first('label'), release_date: first('release_date'),
+    isrcs, score: Math.min(100, lead.score + bonus * (members.length - 1)),
+    sources: [...new Set(members.flatMap((m) => m.sources))], mbid: first('mbid'),
+  };
+}
+
+class MultiRecognizer {
+  constructor(providers, strategy, acceptScore = 80) {
+    this.providers = providers; this.strategy = strategy; this.acceptScore = acceptScore;
+    this.disabled = new Map();
+    this.name = 'multi';
+    this.cacheTag = `${strategy}-${providers.map((p) => p.name).join('+')}`;
+  }
+  active() { return this.providers.filter((p) => !this.disabled.has(p.name)); }
+  async call(p, blob) {
+    try {
+      const m = await p.identify(blob);
+      return m ? { match: { ...m, acrid: '', sources: m.sources?.length ? m.sources : [p.name] } } : {};
+    } catch (e) {
+      if (e instanceof FatalError) { if (!this.disabled.has(p.name)) { this.disabled.set(p.name, e.message); log(`${p.label} désactivé : ${e.message}`); } return {}; }
+      return { error: e };
+    }
+  }
+  noneLeft() {
+    return new FatalError('Aucun service disponible : ' + [...this.disabled.values()].join(' | '));
+  }
+  async identify(blob) {
+    const active = this.active();
+    if (!active.length) throw this.noneLeft();
+    let outcomes = [];
+    if (this.strategy === 'cascade') {
+      for (const p of active) {
+        const o = await this.call(p, blob);
+        outcomes.push(o);
+        if (o.match && o.match.score >= this.acceptScore) break;
+      }
+    } else {
+      outcomes = await Promise.all(active.map((p) => this.call(p, blob)));
+    }
+    const matches = outcomes.map((o) => o.match).filter(Boolean);
+    const errors = outcomes.map((o) => o.error).filter(Boolean);
+    const result = this.strategy === 'cascade'
+      ? (matches.length ? matches.reduce((a, b) => (b.score > a.score ? b : a)) : null)
+      : mergeMatches(matches);
+    if (result) return result;
+    if (errors.length) throw errors[0];          // rien trouvé mais un service en panne : ne pas mémoriser « rien »
+    if (!this.active().length) throw this.noneLeft();
+    return null;
+  }
+}
+
+/* =========================================================================
+ * MusicBrainz : ISRC manquants (gratuit, 1 requête par seconde)
+ * ========================================================================= */
+class MusicBrainz {
+  constructor() {
+    this.cache = store.get('mixisrc:mb', {});
+    this.next = 0; this.calls = 0;
+  }
+  save() {
+    if (!store.set('mixisrc:mb', this.cache)) { this.cache = {}; store.remove('mixisrc:mb'); }
+  }
+  async get(path, params) {
+    let last = 'erreur inconnue';
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      if (attempt) await sleep(2000 * 2 ** (attempt - 1));
+      const wait = this.next - Date.now();
+      if (wait > 0) await sleep(wait);
+      this.next = Date.now() + 1100;
+      this.calls++;
+      const qs = new URLSearchParams({ ...params, fmt: 'json' });
+      let resp;
+      try { resp = await fetch(`https://musicbrainz.org/ws/2/${path}?${qs}`, { headers: { Accept: 'application/json' } }); }
+      catch { last = 'réseau'; continue; }
+      if (resp.status === 404) return {};
+      if (resp.status >= 500 || resp.status === 429) { last = `HTTP ${resp.status}`; continue; }
+      try { return await resp.json(); } catch { last = 'réponse illisible'; }
+    }
+    throw new TempError(`MusicBrainz : ${last}`);
+  }
+  async isrcsForRecording(mbid) {
+    const k = 'rec:' + mbid;
+    if (!(k in this.cache)) this.cache[k] = extractIsrcs((await this.get(`recording/${mbid}`, { inc: 'isrcs' })).isrcs);
+    return this.cache[k];
+  }
+  async findIsrcs(artists, title) {
+    const a = mainArtist(artists), t = looseTitle(title);
+    if (!a || !t) return { mbid: '', isrcs: [] };
+    const k = `search:${a}|${t}`;
+    if (!(k in this.cache)) {
+      const esc = (s) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const data = await this.get('recording', { query: `artist:"${esc(a)}" AND recording:"${esc(title)}"`, limit: '10' });
+      const candidates = [];
+      for (const rec of data.recordings || []) {
+        if ((rec.score || 0) < 90) continue;
+        const credit = rec['artist-credit'] || [];
+        const firstName = credit.length ? (credit[0].name || credit[0].artist?.name || '') : '';
+        if (mainArtist(firstName) !== a || looseTitle(rec.title) !== t) continue;
+        candidates.push(rec.id);
+      }
+      let found = { mbid: candidates[0] || '', isrcs: [] };
+      for (const id of candidates.slice(0, 3)) {
+        const isrcs = await this.isrcsForRecording(id);
+        if (isrcs.length) { found = { mbid: id, isrcs }; break; }
+      }
+      this.cache[k] = found;
+    }
+    return this.cache[k];
+  }
+}
+
+const MISSING = 'ISRC absent de la base';
+const DEDUCED = 'ISRC déduit de MusicBrainz (à confirmer)';
+async function enrichTracks(tracks, mb, shouldStop) {
+  const stats = { tried: 0, found: 0, errors: [] };
+  try {
+    for (const t of tracks) {
+      if (t.isrc || shouldStop()) continue;
+      stats.tried++;
+      try {
+        let mbid = t.mbid, isrcs = mbid ? await mb.isrcsForRecording(mbid) : [];
+        if (!isrcs.length) { const r = await mb.findIsrcs(t.artists, t.title); isrcs = r.isrcs; mbid = mbid || r.mbid; }
+        if (!isrcs.length) continue;
+        t.isrc = isrcs[0];
+        t.other_isrcs = [...isrcs.slice(1).filter((i) => !t.other_isrcs.includes(i)), ...t.other_isrcs];
+        t.isrc_source = 'musicbrainz'; t.mbid = mbid; t.needs_review = true;
+        t.review_reasons = [...t.review_reasons.filter((r) => r !== MISSING), DEDUCED];
+        stats.found++;
+      } catch (e) { stats.errors.push(`${t.artists} - ${t.title} : ${e.message}`); }
+    }
+  } finally { mb.save(); }
+  return stats;
+}
+
+/* =========================================================================
+ * Tracklist : regroupement des extraits en titres
+ * ========================================================================= */
+const STRONG_SCORE = 85;
+function buildTracks(results, o, duration) {
+  const valid = results.filter((r) => r.match && r.match.score >= o.minScore).sort((a, b) => a.offset - b.offset);
+  const maxDist = (o.maxGap + 1) * o.step + 1e-6;
+  const runs = [];
+  for (const r of valid) {
+    const k = matchKey(r.match), cur = runs[runs.length - 1];
+    if (cur && cur.key === k && r.offset - cur.hits[cur.hits.length - 1].offset <= maxDist) cur.hits.push(r);
+    else runs.push({ key: k, hits: [r] });
+  }
+  const kept = runs.filter((r) => r.hits.length >= o.minHits || Math.max(...r.hits.map((h) => h.match.score)) >= STRONG_SCORE);
+  const merged = [];
+  for (const r of kept) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.key === r.key && r.hits[0].offset - prev.hits[prev.hits.length - 1].offset <= maxDist) prev.hits.push(...r.hits);
+    else merged.push({ key: r.key, hits: [...r.hits] });
+  }
+  return merged.map((run) => {
+    const ms = run.hits.map((h) => h.match);
+    const counts = new Map();
+    for (const m of ms) for (const i of m.isrcs) counts.set(i, (counts.get(i) || 0) + 1);
+    const ranked = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a));
+    const best = ms.reduce((a, b) => (b.score > a.score ? b : a));
+    const top = ranked[0] || '';
+    const isrcSrc = new Map(), srcCount = new Map();
+    for (const m of ms) for (const s of m.sources) {
+      srcCount.set(s, (srcCount.get(s) || 0) + 1);
+      if (top && m.isrcs.includes(top)) isrcSrc.set(s, (isrcSrc.get(s) || 0) + 1);
+    }
+    const byCount = (map) => [...map.keys()].sort((a, b) => map.get(b) - map.get(a));
+    const reasons = [];
+    if (!ranked.length) reasons.push(MISSING);
+    else if (ranked.length > 1) reasons.push('plusieurs ISRC possibles');
+    if (run.hits.length < o.minHits) reasons.push('détection unique');
+    const end = run.hits[run.hits.length - 1].offset + o.win;
+    return {
+      start: run.hits[0].offset, end: duration != null ? Math.min(end, duration) : end,
+      title: best.title || ms[0].title, artists: best.artists || ms[0].artists,
+      album: best.album, label: best.label, release_date: best.release_date,
+      isrc: top, other_isrcs: ranked.slice(1), hits: run.hits.length,
+      avg_score: Math.round((ms.reduce((a, m) => a + m.score, 0) / ms.length) * 10) / 10,
+      needs_review: reasons.length > 0, review_reasons: reasons, validated: false,
+      sources: byCount(srcCount), isrc_source: byCount(isrcSrc)[0] || '',
+      mbid: ms.find((m) => m.mbid)?.mbid || '',
+    };
+  });
+}
+
+function findGaps(tracks, duration, minGap = 60) {
+  const gaps = []; let cursor = 0;
+  for (const t of tracks) { if (t.start - cursor >= minGap) gaps.push({ start: cursor, end: t.start }); cursor = Math.max(cursor, t.end); }
+  if (duration - cursor >= minGap) gaps.push({ start: cursor, end: duration });
+  return gaps;
+}
+
+/* =========================================================================
+ * Cache des extraits (localStorage)
+ * ========================================================================= */
+const CACHE_PREFIX = 'mixisrc:w:';
+function cacheKey(file, win, tag) { return `${CACHE_PREFIX}${file.name}|${file.size}|${file.lastModified}|w${win}|${tag}`; }
+function cacheSave(key, data) {
+  const payload = { t: Date.now(), d: data };
+  for (let i = 0; i < 20; i++) {
+    if (store.set(key, payload)) return;
+    // stockage plein : on supprime l'analyse la plus ancienne (autre que celle-ci)
+    const others = store.keys(CACHE_PREFIX).filter((k) => k !== key)
+      .map((k) => ({ k, t: store.get(k, {}).t || 0 })).sort((a, b) => a.t - b.t);
+    if (!others.length) return;
+    store.remove(others[0].k);
+  }
+}
+function cacheInfo() {
+  const n = store.keys(CACHE_PREFIX).length;
+  $('#cacheInfo').textContent = n ? `${n} analyse(s) en cache` : 'cache vide';
+}
+
+/* =========================================================================
+ * Analyse d'un mix
+ * ========================================================================= */
+async function runPool(items, n, fn, shouldStop) {
+  let i = 0;
+  const worker = async () => { while (i < items.length && !shouldStop()) { const it = items[i++]; await fn(it); } };
+  await Promise.all(Array.from({ length: Math.max(1, n) }, worker));
+}
+
+async function analyzeMix(entry, recognizer, opts, mb, onProgress, shouldStop) {
+  const src = entry.source, offsets = windowOffsets(src.duration, opts.win, opts.step);
+  const key = cacheKey(entry.file, opts.win, recognizer.cacheTag);
+  const cached = store.get(key, null)?.d || {};
+  const results = new Map(), stats = { total: offsets.length, fromCache: 0, sent: 0, failed: 0, errors: [], warnings: [] };
+  const todo = [];
+  for (const off of offsets) {
+    if (Object.prototype.hasOwnProperty.call(cached, String(off))) { results.set(off, cached[String(off)]); stats.fromCache++; }
+    else todo.push(off);
+  }
+  let done = stats.fromCache, fatal = null, sinceSave = 0;
+  onProgress(done, offsets.length);
+  const stop = () => shouldStop() || !!fatal;
+  if (todo.length && src.prepare) await src.prepare();
+  try {
+  await runPool(todo, opts.workers, async (off) => {
+    try {
+      const blob = await src.window(off, opts.win);
+      const match = await recognizer.identify(blob);
+      results.set(off, match); cached[String(off)] = match; stats.sent++;
+      if (++sinceSave >= 10) { sinceSave = 0; cacheSave(key, cached); }
+    } catch (e) {
+      if (e instanceof FatalError) { fatal = e; return; }
+      stats.failed++; stats.errors.push(`${fmtTime(off)} : ${e.message}`);
+    }
+    done++; onProgress(done, offsets.length);
+  }, stop);
+  } finally { if (src.release) src.release(); }
+  cacheSave(key, cached);
+  if (fatal) throw fatal;
+
+  const ordered = offsets.filter((o) => results.has(o)).map((o) => ({ offset: o, match: results.get(o) }));
+  const tracks = buildTracks(ordered, opts, src.duration);
+  if (mb && !shouldStop()) {
+    const s = await enrichTracks(tracks, mb, shouldStop);
+    stats.isrcTried = s.tried; stats.isrcFound = s.found;
+    stats.warnings.push(...s.errors.map((e) => 'MusicBrainz : ' + e));
+  }
+  if (recognizer.disabled) for (const [n, why] of recognizer.disabled) stats.warnings.push(`${n} désactivé : ${why}`);
+  const complete = results.size === offsets.length;
+  return { tracks, gaps: findGaps(tracks, src.duration), stats, complete };
+}
+
+/* =========================================================================
+ * Exports
+ * ========================================================================= */
+const CSV_COLUMNS = ['mix', 'position', 'debut', 'fin', 'artiste', 'titre', 'album', 'label', 'date_sortie', 'isrc',
+  'autres_isrc', 'origine_isrc', 'services', 'detections', 'score_moyen', 'a_verifier', 'motif'];
+const csvCell = (v) => { const s = String(v ?? ''); return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+function csvRows(mixName, tracks) {
+  return tracks.map((t, i) => [mixName, i + 1, fmtTime(t.start), fmtTime(t.end), t.artists, t.title, t.album, t.label,
+    t.release_date, fmtIsrc(t.isrc), t.other_isrcs.map(fmtIsrc).join(' | '), t.isrc_source, t.sources.join('+'),
+    t.hits, String(t.avg_score).replace('.', ','), t.needs_review && !t.validated ? 'oui' : 'non',
+    t.validated ? 'vérifié manuellement' : t.review_reasons.join(' ; ')]);
+}
+function toCsv(rows) { return '﻿' + [CSV_COLUMNS, ...rows].map((r) => r.map(csvCell).join(';')).join('\r\n') + '\r\n'; }
+function toTxt(mixName, tracks, gaps) {
+  const lines = [`Tracklist - ${mixName}`, ''];
+  tracks.forEach((t, i) => {
+    const flag = t.needs_review && !t.validated ? '  (à vérifier)' : '';
+    lines.push(`${String(i + 1).padStart(2, '0')}. ${fmtTime(t.start)}  ${t.artists} - ${t.title}  [${fmtIsrc(t.isrc) || 'ISRC inconnu'}]${flag}`);
+  });
+  if (gaps.length) { lines.push('', 'Zones non identifiées (à écouter manuellement) :'); for (const g of gaps) lines.push(`    ${fmtTime(g.start)} -> ${fmtTime(g.end)}`); }
+  return lines.join('\n') + '\n';
+}
+function download(name, content, type) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const a = el('a', { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+const stem = (name) => name.replace(/\.[^.]+$/, '');
+
+/* =========================================================================
+ * Interface
+ * ========================================================================= */
+const state = { entries: [], running: false, stop: false };
+let nextId = 1;
+
+const WORKER_CODE = `// Relais Mix ISRC pour Cloudflare Workers : transmet les requêtes vers ACRCloud et AudD
+// en ajoutant les en-têtes CORS. Ne stocke rien. Ne relaie vers aucun autre site.
+// Facultatif : remplacez "*" par l'adresse de votre page (ex. "https://moncompte.github.io")
+// pour que seule votre page puisse utiliser ce relais.
+const ALLOWED_ORIGIN = "*";
+const ALLOWED_HOSTS = [/^api\\.audd\\.io$/, /^identify-[a-z0-9-]+\\.acrcloud\\.com$/];
+
+export default {
+  async fetch(request) {
+    const cors = {
+      "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "*",
+      "Access-Control-Max-Age": "86400",
+    };
+    if (request.method === "OPTIONS") return new Response(null, { headers: cors });
+    if (request.method !== "POST") return new Response("POST uniquement", { status: 405, headers: cors });
+
+    let target;
+    try { target = new URL(new URL(request.url).searchParams.get("target")); }
+    catch { return new Response("paramètre target manquant", { status: 400, headers: cors }); }
+    if (target.protocol !== "https:" || !ALLOWED_HOSTS.some((re) => re.test(target.hostname))) {
+      return new Response("hôte refusé", { status: 403, headers: cors });
+    }
+    const upstream = await fetch(target, {
+      method: "POST",
+      body: request.body,
+      headers: { "Content-Type": request.headers.get("Content-Type") || "" },
+    });
+    const response = new Response(upstream.body, upstream);
+    for (const [k, v] of Object.entries(cors)) response.headers.set(k, v);
+    return response;
+  },
+};
+`;
+
+function readSettings() {
+  const num = (id, def) => { const v = Number($(id).value); return Number.isFinite(v) && v > 0 ? v : def; };
+  return {
+    acrOn: $('#acrOn').checked, auddOn: $('#auddOn').checked,
+    acrHost: $('#acrHost').value.trim(), acrKey: $('#acrKey').value.trim(), acrSecret: $('#acrSecret').value.trim(),
+    auddToken: $('#auddToken').value.trim(),
+    order: $('#order').value, strategy: document.querySelector('input[name=strategy]:checked').value,
+    mbOn: $('#mbOn').checked, proxy: $('#proxy').value.trim().replace(/\/+$/, ''),
+    remember: $('#remember').checked,
+    win: Math.min(20, num('#win', 12)), step: num('#step', 20), minScore: Math.min(100, Number($('#minScore').value) || 0),
+    minHits: Math.max(1, Math.round(num('#minHits', 2))), maxGap: Math.max(0, Math.round(Number($('#maxGap').value) || 0)),
+    workers: Math.min(8, Math.max(1, Math.round(num('#workers', 2)))),
+  };
+}
+const SECRET_FIELDS = ['acrKey', 'acrSecret', 'auddToken'];
+function saveSettings() {
+  const s = readSettings();
+  const pub = { ...s }; for (const f of SECRET_FIELDS) delete pub[f];
+  store.set('mixisrc:settings', pub);
+  if (s.remember) store.set('mixisrc:keys', Object.fromEntries(SECRET_FIELDS.map((f) => [f, s[f]])));
+  else store.remove('mixisrc:keys');
+  updateEstimate(); updateRunButton();
+}
+function loadSettings() {
+  const pub = store.get('mixisrc:settings', {}), keys = store.get('mixisrc:keys', null);
+  const all = { ...pub, ...(keys || {}) };
+  for (const [k, v] of Object.entries(all)) {
+    const node = document.getElementById(k);
+    if (!node) continue;
+    if (node.type === 'checkbox') node.checked = !!v; else node.value = v;
+  }
+  if (pub.strategy) { const r = document.querySelector(`input[name=strategy][value="${pub.strategy}"]`); if (r) r.checked = true; }
+  $('#remember').checked = !!keys;
+  if (pub.proxy) $('#proxyBox').open = true;
+}
+
+function providerNames(s) {
+  return s.order.split(',').filter((n) => (n === 'acrcloud' ? s.acrOn : s.auddOn));
+}
+
+function updateEstimate() {
+  const s = readSettings(), ready = state.entries.filter((e) => e.source);
+  for (const e of state.entries) if (e.source) e.cells.windows.textContent = nf.format(windowOffsets(e.source.duration, s.win, s.step).length);
+  if (!ready.length) { $('#estimate').textContent = ''; return; }
+  const total = ready.reduce((a, e) => a + windowOffsets(e.source.duration, s.win, s.step).length, 0);
+  const dur = ready.reduce((a, e) => a + e.source.duration, 0);
+  const n = providerNames(s).length;
+  let txt = `${ready.length} mix(s), ${fmtDuration(dur)} d'audio → ${nf.format(total)} extraits à identifier.`;
+  if (n > 1) txt += s.strategy === 'parallel'
+    ? ` En parallèle : ${nf.format(total * n)} requêtes au total (${nf.format(total)} par service).`
+    : ` En cascade : ${nf.format(total)} requêtes au premier service, le second ne reçoit que les extraits non résolus.`;
+  $('#estimate').textContent = txt;
+}
+
+function updateRunButton() {
+  const s = readSettings();
+  const hasProvider = (s.acrOn && s.acrKey && s.acrSecret && s.acrHost) || (s.auddOn && s.auddToken);
+  const hasFiles = state.entries.some((e) => e.source);
+  $('#run').disabled = state.running || !hasProvider || !hasFiles;
+  $('#stop').disabled = !state.running;
+  $('#runMsg').textContent = state.running ? '' : !hasFiles ? 'Ajoutez au moins un mix.' : !hasProvider ? 'Renseignez les clés d’au moins un service activé.' : '';
+}
+
+function setStatus(entry, text, cls = '') {
+  entry.cells.status.replaceChildren(el('span', { class: 'tag ' + cls }, text));
+}
+
+async function addFiles(files) {
+  $('#fileTable').classList.remove('hidden');
+  for (const file of files) {
+    const entry = { id: nextId++, file, source: null, result: null, cells: {} };
+    const bar = el('div');
+    entry.cells = {
+      duration: el('td', { class: 'num' }, '…'), kind: el('td', {}, '…'), windows: el('td', { class: 'num' }, '…'),
+      status: el('span'), bar,
+    };
+    const removeBtn = el('button', { class: 'small', type: 'button', title: 'Retirer', 'aria-label': `Retirer ${file.name}`,
+      onclick: () => { if (state.running) return; state.entries = state.entries.filter((e) => e !== entry); entry.row.remove(); renderResults(); updateEstimate(); updateRunButton(); } }, '✕');
+    entry.row = el('tr', {}, el('td', { style: 'word-break:break-word;min-width:140px' }, file.name), entry.cells.duration, entry.cells.kind,
+      entry.cells.windows, el('td', {}, entry.cells.status, el('div', { class: 'progress', title: 'Progression' }, bar)),
+      el('td', {}, removeBtn));
+    $('#fileTable tbody').append(entry.row);
+    state.entries.push(entry);
+    setStatus(entry, 'lecture…');
+    try {
+      entry.source = await openSource(file);
+      entry.cells.duration.textContent = fmtTime(entry.source.duration);
+      entry.cells.kind.textContent = entry.source.kind;
+      setStatus(entry, 'prêt');
+      log(`${file.name} : ${entry.source.kind}, ${fmtTime(entry.source.duration)}`);
+    } catch (e) {
+      entry.cells.duration.textContent = '—'; entry.cells.kind.textContent = '—'; entry.cells.windows.textContent = '—';
+      setStatus(entry, 'illisible', 'err');
+      log(`${file.name} : lecture impossible (${e.message || e})`);
+    }
+    updateEstimate(); updateRunButton();
+  }
+}
+
+function notice(text, cls = 'err') { $('#notices').append(el('div', { class: 'notice ' + cls }, text)); }
+
+async function run() {
+  const s = readSettings();
+  proxyUrl = s.proxy;
+  $('#notices').replaceChildren();
+  const providers = [];
+  for (const n of providerNames(s)) {
+    if (n === 'acrcloud' && s.acrKey && s.acrSecret && s.acrHost) providers.push(new AcrCloud({ host: s.acrHost, key: s.acrKey, secret: s.acrSecret }));
+    if (n === 'audd' && s.auddToken) providers.push(new Audd(s.auddToken));
+  }
+  if (!providers.length) return;
+  let recognizer;
+  if (providers.length === 1) { recognizer = providers[0]; recognizer.cacheTag = recognizer.name; }
+  else recognizer = new MultiRecognizer(providers, s.strategy);
+  const mb = s.mbOn ? new MusicBrainz() : null;
+  const opts = { win: s.win, step: s.step, minScore: s.minScore, minHits: s.minHits, maxGap: s.maxGap, workers: s.workers };
+
+  state.running = true; state.stop = false; updateRunButton();
+  log(`Analyse : ${providers.map((p) => p.label).join(', ')}${providers.length > 1 ? ` (${s.strategy})` : ''}${mb ? ' + MusicBrainz' : ''}`);
+  const before = Object.fromEntries(providers.map((p) => [p.label, 0]));
+  try {
+    for (const entry of state.entries) {
+      if (state.stop) break;
+      if (!entry.source) continue;
+      setStatus(entry, 'analyse…');
+      try {
+        const res = await analyzeMix(entry, recognizer, opts, mb,
+          (d, t) => { entry.cells.bar.style.width = `${t ? (100 * d) / t : 100}%`; setStatus(entry, `${d}/${t}`); },
+          () => state.stop);
+        entry.result = res;
+        const used = providers.map((p) => { const n = p.calls - before[p.label]; before[p.label] = p.calls; return `${p.label} ${n}`; }).join(', ');
+        res.stats.requests = used;
+        if (state.stop && !res.complete) setStatus(entry, 'interrompu', 'warn');
+        else if (res.stats.failed) setStatus(entry, `${res.stats.failed} échecs`, 'warn');
+        else setStatus(entry, 'terminé', 'ok');
+        log(`${entry.file.name} : ${res.tracks.length} titres ; requêtes : ${used}`);
+        for (const w of res.stats.warnings) log('  ' + w);
+        if (res.stats.failed) log(`  ${res.stats.failed} extraits en échec (relancez l'analyse pour les retenter) : ${res.stats.errors.slice(0, 3).join(' | ')}`);
+        renderResults();
+      } catch (e) {
+        setStatus(entry, 'arrêté', 'err');
+        if (e instanceof FatalError) { notice(e.message); log('Arrêt : ' + e.message); break; }
+        notice(`${entry.file.name} : ${e.message || e}`); log(`${entry.file.name} : ${e.stack || e}`);
+      }
+    }
+    if (recognizer.disabled?.size) for (const [, why] of recognizer.disabled) notice(why, 'warn');
+  } finally {
+    state.running = false; updateRunButton(); cacheInfo();
+  }
+}
+
+let rendering = false;
+function renderResults() {
+  if (rendering) return; // un champ qui perd le focus pendant le rendu déclenche « change » : on l'ignore
+  rendering = true;
+  try { renderResultsNow(); } finally { rendering = false; }
+}
+function renderResultsNow() {
+  const done = state.entries.filter((e) => e.result);
+  $('#resultsCard').classList.toggle('hidden', !done.length);
+  const root = $('#results');
+  root.replaceChildren();
+  for (const entry of done) {
+    const { tracks, gaps, stats } = entry.result, name = stem(entry.file.name);
+    const withIsrc = tracks.filter((t) => t.isrc).length, review = tracks.filter((t) => t.needs_review && !t.validated).length;
+    const info = [`${tracks.length} titres`, `${withIsrc} avec ISRC`, `${review} à vérifier`, `${gaps.length} zone(s) non identifiée(s)`];
+    if (stats.requests) info.push(`requêtes : ${stats.requests}`);
+    if (stats.fromCache) info.push(`${stats.fromCache} extraits depuis le cache`);
+    if (stats.isrcTried) info.push(`MusicBrainz : ${stats.isrcFound}/${stats.isrcTried} ISRC retrouvés`);
+
+    const tbody = el('tbody');
+    tracks.forEach((t, i) => {
+      const input = el('input', { class: 'isrc', type: 'text', value: fmtIsrc(t.isrc), spellcheck: false, 'aria-label': `ISRC de ${t.title}` });
+      input.addEventListener('change', () => {
+        const n = normIsrc(input.value);
+        if (n && !isValidIsrc(n)) { input.classList.add('invalid'); input.title = 'Format attendu : CC-XXX-AA-NNNNN'; return; }
+        input.classList.remove('invalid'); input.title = '';
+        if (n !== t.isrc) { t.isrc = n; t.isrc_source = n ? 'manuel' : ''; }
+        input.value = fmtIsrc(n);
+        setTimeout(renderResults, 0);
+      });
+      const statusCell = el('td');
+      if (t.needs_review && !t.validated) {
+        statusCell.append(...t.review_reasons.map((r) => el('span', { class: 'tag warn' }, r)),
+          el('button', { class: 'small', type: 'button', onclick: () => { t.validated = true; renderResults(); } }, 'Valider'));
+      } else if (t.validated) {
+        statusCell.append(el('span', { class: 'tag ok' }, 'vérifié'),
+          el('button', { class: 'small', type: 'button', onclick: () => { t.validated = false; renderResults(); } }, 'Annuler'));
+      } else statusCell.append(el('span', { class: 'tag ok' }, 'OK'));
+      tbody.append(el('tr', {},
+        el('td', { class: 'num' }, i + 1),
+        el('td', { class: 'time' }, fmtTime(t.start)),
+        el('td', { class: 'title' }, el('div', {}, t.title), el('div', { class: 'sub' }, t.artists),
+          t.label ? el('div', { class: 'sub' }, t.label) : null),
+        el('td', {}, input, t.other_isrcs.length ? el('div', { class: 'sub', title: 'Autres ISRC possibles' }, 'ou ' + t.other_isrcs.map(fmtIsrc).join(', ')) : null,
+          t.isrc_source ? el('div', { class: 'sub' }, 'source : ' + t.isrc_source) : null),
+        el('td', {}, t.sources.map((src) => el('span', { class: 'tag' }, src))),
+        el('td', { class: 'num' }, `${t.hits} × ${String(t.avg_score).replace('.', ',')}`),
+        statusCell));
+    });
+    const block = el('div', { class: 'mix' },
+      el('div', { class: 'row' }, el('h3', {}, entry.file.name), el('span', { class: 'spacer' }),
+        el('button', { type: 'button', class: 'small', onclick: () => download(`${name}.csv`, toCsv(csvRows(name, tracks)), 'text/csv;charset=utf-8') }, 'CSV'),
+        el('button', { type: 'button', class: 'small', onclick: () => download(`${name}.txt`, toTxt(name, tracks, gaps), 'text/plain;charset=utf-8') }, 'TXT'),
+        el('button', { type: 'button', class: 'small', onclick: () => download(`${name}.json`, JSON.stringify({ mix: name, duree_s: Math.round(entry.source.duration * 10) / 10, titres: tracks, zones_non_identifiees: gaps }, null, 2), 'application/json') }, 'JSON')),
+      el('p', { class: 'stats' }, info.join(' · ')),
+      !entry.result.complete ? el('div', { class: 'notice warn' }, 'Analyse incomplète : relancez « Analyser » pour terminer (les extraits déjà identifiés ne seront pas renvoyés).') : null,
+      tracks.length ? el('div', { class: 'table-wrap' }, el('table', {},
+        el('thead', {}, el('tr', {}, ['#', 'Début', 'Titre', 'ISRC', 'Services', 'Détections', 'Statut'].map((h) => el('th', {}, h)))), tbody))
+        : el('p', { class: 'muted' }, 'Aucun titre identifié.'),
+      gaps.length ? el('p', { class: 'stats' }, 'Zones non identifiées, à écouter : ' + gaps.map((g) => `${fmtTime(g.start)} → ${fmtTime(g.end)}`).join(', ')) : null);
+    root.append(block);
+  }
+}
+
+function init() {
+  $('#workerCode').textContent = WORKER_CODE;
+  loadSettings(); cacheInfo(); updateRunButton();
+
+  for (const node of document.querySelectorAll('#services input, #services select, details input'))
+    node.addEventListener('input', saveSettings);
+  for (const node of document.querySelectorAll('input[name=strategy], input[type=checkbox]'))
+    node.addEventListener('change', saveSettings);
+
+  $('#forget').addEventListener('click', () => {
+    store.remove('mixisrc:keys');
+    for (const f of SECRET_FIELDS) $('#' + f).value = '';
+    $('#remember').checked = false; saveSettings();
+  });
+  $('#copyWorker').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(WORKER_CODE); $('#copyMsg').textContent = 'Copié.'; }
+    catch { $('#copyMsg').textContent = 'Copie impossible : sélectionnez le code ci-dessous.'; }
+  });
+  $('#clearCache').addEventListener('click', () => {
+    for (const k of store.keys(CACHE_PREFIX)) store.remove(k);
+    store.remove('mixisrc:mb'); cacheInfo();
+  });
+
+  const drop = $('#drop'), input = $('#fileInput');
+  drop.addEventListener('click', () => input.click());
+  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+  input.addEventListener('change', () => { addFiles([...input.files]); input.value = ''; });
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); addFiles([...e.dataTransfer.files]); });
+
+  $('#run').addEventListener('click', run);
+  $('#stop').addEventListener('click', () => { state.stop = true; $('#stop').disabled = true; log('Arrêt demandé…'); });
+  $('#exportRecap').addEventListener('click', () => {
+    const rows = state.entries.filter((e) => e.result).flatMap((e) => csvRows(stem(e.file.name), e.result.tracks));
+    download('recap.csv', toCsv(rows), 'text/csv;charset=utf-8');
+  });
+  window.addEventListener('beforeunload', (e) => { if (state.running || state.entries.some((x) => x.result)) { e.preventDefault(); e.returnValue = ''; } });
+}
+
+// Accès pour les tests automatisés
+window.MixISRC = { openSource, windowOffsets, buildTracks, mergeMatches, acrSignature, parseAcr, parseAudd,
+  looseKey, fmtIsrc, isValidIsrc, extractIsrcs, findGaps, csvRows, toCsv, state };
+
+init();
+})();
+</script>
+</body>
+</html>
